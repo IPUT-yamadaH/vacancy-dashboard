@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>自習室空き状況システム</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f5f6fa; padding: 20px; color: #333; margin: 0; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        /* ヘッダーエリア */
+        .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .header-area h1 { margin: 0; color: #2c3e50; font-size: 24px; }
+        
+        /* 管理者設定ボタンスタイル */
+        .admin-btn { background-color: #4a5568; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: background 0.2s; display: flex; align-items: center; gap: 6px; }
+        .admin-btn:hover { background-color: #2d3748; }
+        .admin-logout-btn { background-color: #e53e3e; }
+        .admin-logout-btn:hover { background-color: #c53030; }
+
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        
+        /* アラート枠 */
+        .alert-box { background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+        .alert-box h4 { margin: 0 0 8px 0; color: #b45309; }
+        .alert-box ul { margin: 0; padding-left: 20px; color: #78350f; font-size: 14px; }
+        .alert-box li { margin-bottom: 4px; }
+
+        /* おすすめ枠 */
+        .recommend-box { background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 6px; margin-bottom: 25px; font-size: 14px; color: #1e3a8a; }
+        
+        /* 空席予測（来週1週間分） */
+        .prediction-title { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
+        .prediction-subtitle { font-size: 12px; color: #64748b; margin-bottom: 15px; }
+        .grid-7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 20px; }
+        .pred-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 8px; text-align: center; }
+        .pred-card .day { font-size: 13px; color: #64748b; margin-bottom: 6px; }
+        .pred-card .seats { font-size: 22px; font-weight: bold; color: #10b981; }
+        .pred-card .seats.mid { color: #ea580c; }
+        .pred-card .sample-count { font-size: 10px; color: #94a3b8; margin-top: 4px; }
+        @media (max-width: 700px) {
+            .grid-7 { grid-template-columns: repeat(4, 1fr); }
+        }
+
+        /* 座席マップ */
+        .seat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+        .seat-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; text-align: center; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80px; }
+        .seat-item .status { font-weight: bold; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; }
+        .seat-item.occupied { border-color: #f97316; background-color: #fff7ed; }
+        .seat-item.occupied .status { color: #ea580c; }
+        .seat-item.maybe { border-color: #3b82f6; background-color: #eff6ff; }
+        .seat-item.maybe .status { color: #2563eb; }
+        .seat-item.vacant { border-color: #10b981; background-color: #f0fdf4; }
+        .seat-item.vacant .status { color: #16a34a; }
+        .seat-label { color: #64748b; font-size: 12px; margin-top: 4px; }
+
+        /* 📉 トレンド用ヘッダーと検索フォーム */
+        .trend-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .trend-title { margin: 0; font-size: 18px; color: #2c3e50; }
+        .past-search-form { display: flex; gap: 8px; align-items: center; }
+        .past-search-form input[type="date"] { padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+        .past-search-form button { background-color: #3b82f6; color: white; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        .past-search-form button:hover { background-color: #2563eb; }
+
+        .chart-wrapper { position: relative; height: 320px; width: 100%; margin-top: 15px; }
+
+        /* モーダルウィンドウ */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; width: 350px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); text-align: center; }
+        .modal-content h3 { margin-top: 0; color: #2c3e50; margin-bottom: 20px; }
+        .modal-content input[type="password"] { width: 90%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 16px; margin-bottom: 20px; text-align: center; }
+        .modal-buttons { display: flex; gap: 10px; justify-content: center; }
+
+        /* 👑 管理者専用領域 */
+        .admin-section { border: 2px dashed #9333ea; background: #faf5ff; padding: 25px; border-radius: 12px; margin-top: 30px; }
+        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #e9d5ff; padding-bottom: 10px; }
+        .admin-header h2 { margin: 0; color: #7e22ce; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+        
+        /* 管理者テーブル */
+        .search-row { display: flex; gap: 10px; margin-bottom: 15px; }
+        .search-row input { padding: 8px 12px; border: 1px solid #d8b4fe; border-radius: 6px; font-size: 14px; width: 280px; }
+        .search-row button { background-color: #9333ea; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .search-row button:hover { background-color: #7e22ce; }
+        
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        th, td { padding: 12px 15px; text-align: left; font-size: 14px; border-bottom: 1px solid #f3e8ff; }
+        th { background-color: #f3e8ff; color: #6b21a8; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-area">
+        <h1>🏫 自習室 混雑・空席状況システム</h1>
+        {% if is_admin %}
+        <button class="admin-btn admin-logout-btn" onclick="location.href='/admin-logout'">
+            🔓 管理者モード終了
+        </button>
+        {% else %}
+        <button class="admin-btn" onclick="openLoginModal()">
+            🔒 管理者設定
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="alert-box">
+            <h4>⚠️ 予測データに基づく混雑アラート:</h4>
+            <ul>
+                <li>データベースに6/28〜7/11の最新分析用データ（人数バラバラの予測値）が正しく同期されました。</li>
+            </ul>
+        </div>
+
+        <div class="prediction-title">🔮 来週の曜日別空席予測 （新テーブル <code>daily_vacancy_status</code> 参照）</div>
+        <div class="prediction-subtitle">※ 曜日ごとに直近の実績（1日単位の平均空席数）を並べ、最小二乗法による単回帰でトレンド（傾き）を算出し、次回分を外挿した予測値です。</div>
+        <div class="grid-7">
+            {% for day in weekday_order %}
+            <div class="pred-card">
+                <div class="day">{{ day }}</div>
+                <div class="seats{% if predictions.get(day, 20) <= 5 %} mid{% endif %}">{{ predictions.get(day, 20) }} 席</div>
+                <div class="sample-count">
+                    {% if trend_used.get(day) %}📈 トレンド予測（{{ prediction_counts.get(day, 0) }}件）
+                    {% else %}実績{{ prediction_counts.get(day, 0) }}件（回帰未使用）
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top: 0;">🏡 現在の自習室の空席状況（リアルタイム座席マップ）</h3>
+        <p style="font-size: 12px; color: #64748b; margin-bottom: 8px;">
+            ※ 座席番号1番のみ実機センサーと連動。それ以外の19席はセンサー未設置のため、固定のダミーデータとして表示しています。
+        </p>
+        <p style="font-size: 12px; color: #64748b; margin-bottom: 20px; display:flex; gap:16px; align-items:center;">
+            <span><span style="color:#ea580c;">🟠 利用中</span>：着席を検知</span>
+            <span><span style="color:#2563eb;">🔵 退席中かも</span>：離席後20分以内（センサー値が戻る可能性あり）</span>
+            <span><span style="color:#16a34a;">🟢 空席</span>：20分経過してもしきい値未満</span>
+        </p>
+
+        <div class="seat-grid">
+            {% for seat in seats %}
+            <div class="seat-item {{ seat.status }}">
+                {% if seat.status == 'occupied' %}
+                <div class="status">🟠 利用中</div>
+                {% elif seat.status == 'maybe' %}
+                <div class="status">🔵 退席中かも</div>
+                {% else %}
+                <div class="status">🟢 空席</div>
+                {% endif %}
+                {% if seat.is_real %}
+                <div class="seat-label">座席: {{ seat.num }}番 (実機)</div>
+                <div style="font-size: 11px; color: {% if seat.status == 'occupied' %}#ea580c{% elif seat.status == 'maybe' %}#2563eb{% else %}#16a34a{% endif %}; margin-top:4px;">Force: {{ latest_sensor.force }}</div>
+                {% else %}
+                <div class="seat-label">座席: {{ seat.num }}番</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="trend-header">
+            <h3 class="trend-title">📈 リアルタイム・データトレンド ({{ target_date }})</h3>
+            
+            {% if is_admin %}
+            <form class="past-search-form" method="GET" action="/">
+                <label for="searchDate" style="font-size: 13px; color: #475569; font-weight: bold;">🔍 過去トレンド検索:</label>
+                <input type="date" id="searchDate" name="date" value="{{ target_date }}" required>
+                <button type="submit">検索</button>
+            </form>
+            {% endif %}
+        </div>
+        <p style="font-size: 12px; color: #64748b; margin-top: -10px; margin-bottom: 15px;">
+            ※ 本日の 8:00〜21:00 までの1時間ごとの空席推移。現在時刻より未来の未取得時間帯は線が描画されず自動で途切れます。
+        </p>
+        <div class="chart-wrapper">
+            <canvas id="vacancyChart"></canvas>
+        </div>
+    </div>
+
+    {% if is_admin %}
+    <div class="admin-section" id="adminArea">
+<div class="admin-header">
+            <h2>🔑 管理者専用：実績ログ・レコード一覧</h2> <span style="font-size: 12px; color: #7e22ce; font-weight: bold; background: #f3e8ff; padding: 4px 10px; border-radius: 20px;">
+                daily_vacancy_status 参照 </span>
+        </div>
+        <div class="search-row">
+            <input type="text" id="adminSearchInput" placeholder="日付(例: 6/28) や 曜日(例: 金曜日)で検索...">
+            <button onclick="loadAdminTable()">フィルタ</button>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>記録日時</th>
+                        <th>対象日</th>
+                        <th>曜日</th>
+                        <th>予測空席数</th>
+                    </tr>
+                </thead>
+                <tbody id="adminTableBody">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="modal" id="loginModal">
+    <div class="modal-content">
+        <h3>管理者設定認証</h3>
+        <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">認証用パスワードを入力してください。</p>
+        <input type="password" id="adminPassword" placeholder="パスワードを入力">
+        <div class="modal-buttons">
+            <button style="background-color: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;" onclick="submitPassword()">確認</button>
+            <button style="background-color: #e2e8f0; color: #475569; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;" onclick="closeLoginModal()">キャンセル</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 1. Chart.js 描画設定 (8:00〜21:00 のデータ)
+    const rawHourlyData = JSON.parse('{{ hourly_data | safe }}');
+    const labels = rawHourlyData.map(d => d.time);
+    const values = rawHourlyData.map(d => d.vacancy);
+
+    const ctx = document.getElementById('vacancyChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '空席数 (0〜20席)',
+                data: values,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.05)',
+                borderWidth: 2.5,
+                pointBackgroundColor: '#10b981',
+                pointRadius: function(context) {
+                    return context.raw === null ? 0 : 4;
+                },
+                spanGaps: false, 
+                tension: 0.15,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    min: 0,
+                    max: 20,
+                    ticks: { stepSize: 2 }
+                }
+            }
+        }
+    });
+
+    setInterval(() => {
+        const modal = document.getElementById('loginModal');
+        const modalIsOpen = modal && modal.style.display === 'flex';
+        if (!modalIsOpen) {
+            location.reload();
+        }
+    }, 300000);
+
+    // 3. モーダルコントロール
+    function openLoginModal() {
+        document.getElementById('loginModal').style.display = 'flex';
+        document.getElementById('adminPassword').focus();
+    }
+
+    function closeLoginModal() {
+        document.getElementById('loginModal').style.display = 'none';
+        document.getElementById('adminPassword').value = '';
+    }
+
+    function submitPassword() {
+        const password = document.getElementById('adminPassword').value;
+        fetch('/admin-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `password=${encodeURIComponent(password)}`
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload(); 
+            } else {
+                alert(data.message);
+            }
+        });
+    }
+
+    // 4. 管理者テーブルの非同期読み込み (認証時のみ動作)
+    function loadAdminTable() {
+        const query = document.getElementById('adminSearchInput').value;
+        fetch(`/admin/records?q=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('adminTableBody');
+            tbody.innerHTML = '';
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #94a3b8;">データが見つかりませんでした</td></tr>`;
+                return;
+            }
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.time}</td>
+                    <td><strong>${row.target_week}</strong></td>
+                    <td>${row.day_of_week}</td>
+                    <td style="font-weight: bold; color: #7e22ce;">${row.predicted_vacancy} 席</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        });
+    }
+
+    {% if is_admin %}
+    document.addEventListener("DOMContentLoaded", function() {
+        loadAdminTable();
+    });
+    {% endif %}
+</script>
+
+</body>
+</html>
